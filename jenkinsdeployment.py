@@ -7,6 +7,19 @@ import time
 file_path = 'deployments.xlsx'
 df = pd.read_excel(file_path)
 
+# Convert columns to appropriate types
+df['OBC'] = df['OBC'].astype(bool)
+df['CBC'] = df['CBC'].astype(bool)
+df['Env'] = df['Env'].astype(str)
+df['ITReleasedVersion'] = df['ITReleasedVersion'].astype(str)
+df['DataCenter'] = df['DataCenter'].astype(str)
+df['ChangeTask'] = df['ChangeTask'].astype(str)
+df['ChangeRequest'] = df['ChangeRequest'].astype(str)
+
+# Ensure status columns are initialized as strings
+df['BuildStatus_OBC'] = df.get('BuildStatus_OBC', '').astype(str)
+df['BuildStatus_CBC'] = df.get('BuildStatus_CBC', '').astype(str)
+
 # Jenkins credentials
 jenkins_user = 'your_jenkins_username'
 jenkins_token = 'your_jenkins_api_token'
