@@ -29,12 +29,25 @@ def trigger_jenkins_job(job_url, params):
     try:
         response = requests.post(job_url, params=params, auth=HTTPBasicAuth(jenkins_user, jenkins_token))
         response.raise_for_status()
+        print("Response Headers:", response.headers)
+        print("Response Body:", response.text)
+        
+        # Try to extract build number from response body if 'Location' header is not found
         location = response.headers.get('Location')
         if location:
             build_number = location.split('/')[-2]
             return build_number
         else:
-            raise Exception("Failed to retrieve build number from response.")
+            # If 'Location' header is missing, try to find build number in response body
+            # This depends on Jenkins configuration and API response format
+            # Example of parsing the response body if it contains build information
+            import re
+            match = re.search(r'buildNumber":(\d+)', response.text)
+            if match:
+                build_number = match.group(1)
+                return build_number
+            else:
+                raise Exception("Failed to retrieve build number from response.")
     except requests.exceptions.RequestException as e:
         print(f"Error triggering Jenkins job: {e}")
         raise
