@@ -27,44 +27,45 @@ jenkins_token = 'your_jenkins_api_token'
 # Function to get Jenkins crumb
 def get_jenkins_crumb():
     crumb_url = 'http://jenkins/crumbIssuer/api/json'
-    response = requests.get(crumb_url, auth=HTTPBasicAuth(jenkins_user, jenkins_token))
-    if response.status_code == 200:
+    try:
+        response = requests.get(crumb_url, auth=HTTPBasicAuth(jenkins_user, jenkins_token))
+        response.raise_for_status()  # Raise an exception for HTTP errors
         crumb_data = response.json()
         return crumb_data['crumb'], crumb_data['crumbRequestField']
-    else:
-        raise Exception("Failed to get crumb token. Status code: {}".format(response.status_code))
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching Jenkins crumb: {e}")
+        raise
 
 # Get crumb token
 crumb, crumb_field = get_jenkins_crumb()
 
 # Function to trigger Jenkins job and get build number
 def trigger_jenkins_job(job_url, params):
-    # Set headers with crumb for CSRF protection
     headers = {crumb_field: crumb}
-    
-    # Trigger the Jenkins job
-    response = requests.post(job_url, params=params, auth=HTTPBasicAuth(jenkins_user, jenkins_token), headers=headers)
-    
-    if response.status_code == 201:
-        # Extract build number or URL from response
+    try:
+        response = requests.post(job_url, params=params, auth=HTTPBasicAuth(jenkins_user, jenkins_token), headers=headers)
+        response.raise_for_status()
         location = response.headers.get('Location')
         if location:
             build_number = location.split('/')[-2]
             return build_number
         else:
             raise Exception("Failed to retrieve build number from response.")
-    else:
-        raise Exception(f"Failed to trigger job at {job_url}. Status code: {response.status_code}, Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error triggering Jenkins job: {e}")
+        raise
 
 # Function to get the status of the Jenkins build
 def get_build_status(job_url, build_number):
     status_url = f"{job_url}/{build_number}/api/json"
-    response = requests.get(status_url, auth=HTTPBasicAuth(jenkins_user, jenkins_token))
-    if response.status_code == 200:
+    try:
+        response = requests.get(status_url, auth=HTTPBasicAuth(jenkins_user, jenkins_token))
+        response.raise_for_status()
         build_info = response.json()
         return build_info['result']
-    else:
-        raise Exception(f"Failed to get build status from {status_url}. Status code: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching build status: {e}")
+        raise
 
 # Function to wait for the build to complete
 def wait_for_build_completion(job_url, build_number):
