@@ -20,7 +20,6 @@ df['ChangeNumberPROD'] = df['ChangeNumberPROD'].astype(str)
 
 # Function to trigger Jenkins job
 def trigger_jenkins_job(job_url, ITReleasedVersion, env, obc, cbc):
-    # Jenkins job URL
     url = f"{job_url}/buildWithParameters"
     params = {
         'ITReleasedVersion': ITReleasedVersion,
@@ -34,8 +33,34 @@ def trigger_jenkins_job(job_url, ITReleasedVersion, env, obc, cbc):
     
     if response.status_code == 201:
         print(f"Successfully triggered job at {job_url} with version {ITReleasedVersion}")
+        # Extract build number or URL from the response headers
+        build_url = response.headers.get('Location', '')
+        return build_url
     else:
         print(f"Failed to trigger job at {job_url}. Status code: {response.status_code}, Response: {response.text}")
+        return None
+
+# Function to check build status
+def get_build_status(build_url):
+    if not build_url:
+        return 'Unknown'
+    
+    # Check the build status using Jenkins API
+    response = requests.get(build_url + 'api/json', auth=HTTPBasicAuth(jenkins_user, jenkins_token))
+    
+    if response.status_code == 200:
+        build_info = response.json()
+        if build_info.get('building'):
+            return 'In Progress'
+        elif build_info.get('result') == 'SUCCESS':
+            return 'Success'
+        elif build_info.get('result') == 'FAILURE':
+            return 'Failure'
+        else:
+            return 'Unknown'
+    else:
+        print(f"Failed to get build status. Status code: {response.status_code}, Response: {response.text}")
+        return 'Error'
 
 # Iterate over each row in the dataframe and trigger the Jenkins job
 for index, row in df.iterrows():
@@ -46,15 +71,19 @@ for index, row in df.iterrows():
     obc = row['OBC']
     cbc = row['CBC']
 
-        # Update the Excel dataframe with build statuses
-    # if obc:
-    #     df.at[index, 'BuildStatus_OBC'] = "; ".join(statuses_obc)
-    # if cbc:
-    #     df.at[index, 'BuildStatus_CBC'] = "; ".join(statuses_cbc)
+    print(f"Processing {app_name}...")
+    build_url = trigger_jenkins_job(job_url, ITReleasedVersion, env, obc, cbc)
+
+    # Wait some time for the build to start
+    time.sleep(30)  # Adjust the sleep time as needed
+
+    # Get and update the build status
+    if obc:
+        build_status = get_build_status(build_url)
+        df.at[index, 'BuildStatus_OBC'] = build_status
+    if cbc:
+        build_status = get_build_status(build_url)
+        df.at[index, 'BuildStatus_CBC'] = build_status
 
 # Save the updated Excel file
-    
-    print(f"Processing {app_name}...")
-    trigger_jenkins_job(job_url, ITReleasedVersion, env, obc, cbc)
-    df.to_excel(file_path, index=False)
-
+df.to_excel(file_path, index=False)
