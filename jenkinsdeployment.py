@@ -7,8 +7,8 @@ file_path = 'groupdeployment.xlsx'
 df = pd.read_excel(file_path)
 
 # Jenkins credentials
-jenkins_user = 'jxgadi'
-jenkins_token = '112a4cf588528fbd87fb9ee0ae88be211c'
+jenkins_user = ''
+jenkins_token = ''
 
 
 df['OBC'] = df['OBC'].astype(bool)
