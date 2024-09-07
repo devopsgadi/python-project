@@ -2,7 +2,7 @@ import openpyxl
 import requests
 import time
 
-jenkins_url = "http://your-jenkins-url"  # Base URL for Jenkins (if needed for other purposes)
+jenkins_url = "http://your-jenkins-url"  # Base URL for Jenkins
 username = "your-username"
 api_token = "your-api-token"
 poll_interval = 10  # Time in seconds to wait between status checks
@@ -13,12 +13,14 @@ def trigger_job(job_name, params):
     if response.status_code == 201:
         print(f"Triggered {job_name}: {response.status_code}")
         # Extract queueId from the response header
-        queue_id = response.headers.get('Location').split('/')[-2]
-        return queue_id
+        location_header = response.headers.get('Location', '')
+        if location_header:
+            queue_id = location_header.split('/')[-2]
+            return queue_id
     else:
         print(f"Failed to trigger {job_name}: {response.status_code}")
-        return None
-        
+    return None
+
 def get_build_number_from_queue(queue_id):
     url = f"{jenkins_url}/queue/item/{queue_id}/api/json"
     while True:
@@ -86,20 +88,22 @@ def main():
             'CBC': cbc
         }
 
-        build_number = trigger_job(job_name, params)
-        if build_number:
-            # Polling for build status
-            while True:
-                status = get_build_status(job_name, build_number)
-                if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
-                    break
-                print(f"Waiting for build {build_number} of {job_name} to complete...")
-                time.sleep(poll_interval)
+        queue_id = trigger_job(job_name, params)
+        if queue_id:
+            build_number = get_build_number_from_queue(queue_id)
+            if build_number:
+                # Polling for build status
+                while True:
+                    status = get_build_status(job_name, build_number)
+                    if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
+                        break
+                    print(f"Waiting for build {build_number} of {job_name} to complete...")
+                    time.sleep(poll_interval)
 
-            # Write the results to the output sheet
-            output_ws.append([
-                app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, status
-            ])
+                # Write the results to the output sheet
+                output_ws.append([
+                    app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, status
+                ])
 
     # Save the output workbook
     output_wb.save('jobs_status.xlsx')
