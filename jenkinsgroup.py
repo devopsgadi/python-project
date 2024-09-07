@@ -45,14 +45,28 @@ def main():
 
     # Iterate over the rows in the input sheet
     for row in input_ws.iter_rows(min_row=2, values_only=True):
-        app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc = row
+        if len(row) < 8:
+            print(f"Row with insufficient data: {row}")
+            continue  # Skip rows that don't have enough data
+
+        app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc = row[:8]
+
+        # Convert CBC to string and handle boolean if necessary
+        if isinstance(cbc, bool):
+            cbc = 'true' if cbc else 'false'
+        elif isinstance(cbc, str):
+            cbc = cbc.strip().lower()
+            cbc = 'true' if cbc == 'yes' else 'false'
+        else:
+            cbc = 'false'  # Default to 'false' if not a string or boolean
+
         params = {
             'Env': env,
             'ChangeRequest': change_request,
             'ChangeTask': change_task,
             'ITReleaseVersion': it_release_version,
             'OBC': obc,
-            'CBC': 'true' if cbc.strip().lower() == 'yes' else 'false'
+            'CBC': cbc
         }
 
         build_number = trigger_job(job_name, params)
