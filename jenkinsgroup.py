@@ -12,12 +12,29 @@ def trigger_job(job_name, params):
     response = requests.post(url, params=params, auth=(username, api_token))
     if response.status_code == 201:
         print(f"Triggered {job_name}: {response.status_code}")
-        # Extract build number from response header
-        build_number = response.headers.get('Location').split('/')[-2]
-        return build_number
+        # Extract queueId from the response header
+        queue_id = response.headers.get('Location').split('/')[-2]
+        return queue_id
     else:
         print(f"Failed to trigger {job_name}: {response.status_code}")
         return None
+        
+def get_build_number_from_queue(queue_id):
+    url = f"{jenkins_url}/queue/item/{queue_id}/api/json"
+    while True:
+        response = requests.get(url, auth=(username, api_token))
+        if response.status_code == 200:
+            queue_info = response.json()
+            if queue_info.get('executable'):
+                build_number = queue_info['executable']['number']
+                return build_number
+            elif queue_info.get('cancelled'):
+                print(f"Build with queueId {queue_id} was cancelled.")
+                return None
+            print(f"Waiting for job {queue_id} to start...")
+        else:
+            print(f"Failed to get queue info for {queue_id}: {response.status_code}")
+        time.sleep(poll_interval)
 
 def get_build_status(job_name, build_number):
     url = f"{jenkins_url}/job/{job_name}/{build_number}/api/json"
