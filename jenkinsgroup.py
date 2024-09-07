@@ -1,4 +1,4 @@
-import csv
+import openpyxl
 import requests
 import time
 
@@ -31,45 +31,47 @@ def get_build_status(job_name, build_number):
         return 'UNKNOWN'
 
 def main():
-    with open('jobs.csv', 'r') as infile, open('jobs_status.csv', 'w', newline='') as outfile:
-        reader = csv.DictReader(infile)
-        fieldnames = ['AppName', 'Job Name', 'Env', 'ChangeRequest', 'ChangeTask', 'ITReleaseVersion', 'OBC', 'CBC', 'Build Status']
-        writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-        writer.writeheader()
-        
-        for row in reader:
-            job_name = row['Job Name']
-            params = {
-                'Env': row['Env'],
-                'ChangeRequest': row['ChangeRequest'],
-                'ChangeTask': row['ChangeTask'],
-                'ITReleaseVersion': row['ITReleaseVersion'],
-                'OBC': row['OBC'],
-                'CBC': 'true' if row['CBC'].strip().lower() == 'yes' else 'false'
-            }
-            
-            build_number = trigger_job(job_name, params)
-            if build_number:
-                # Polling for build status
-                while True:
-                    status = get_build_status(job_name, build_number)
-                    if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
-                        break
-                    print(f"Waiting for build {build_number} of {job_name} to complete...")
-                    time.sleep(poll_interval)
-                
-                # Write the results to the output CSV
-                writer.writerow({
-                    'AppName': row['AppName'],
-                    'Job Name': job_name,
-                    'Env': row['Env'],
-                    'ChangeRequest': row['ChangeRequest'],
-                    'ChangeTask': row['ChangeTask'],
-                    'ITReleaseVersion': row['ITReleaseVersion'],
-                    'OBC': row['OBC'],
-                    'CBC': row['CBC'],
-                    'Build Status': status
-                })
+    # Load the input workbook and select the active sheet
+    input_wb = openpyxl.load_workbook('jobs.xlsx')
+    input_ws = input_wb.active
+
+    # Create the output workbook and sheet
+    output_wb = openpyxl.Workbook()
+    output_ws = output_wb.active
+
+    # Define the header row
+    headers = ['AppName', 'Job Name', 'Env', 'ChangeRequest', 'ChangeTask', 'ITReleaseVersion', 'OBC', 'CBC', 'Build Status']
+    output_ws.append(headers)
+
+    # Iterate over the rows in the input sheet
+    for row in input_ws.iter_rows(min_row=2, values_only=True):
+        app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc = row
+        params = {
+            'Env': env,
+            'ChangeRequest': change_request,
+            'ChangeTask': change_task,
+            'ITReleaseVersion': it_release_version,
+            'OBC': obc,
+            'CBC': 'true' if cbc.strip().lower() == 'yes' else 'false'
+        }
+
+        build_number = trigger_job(job_name, params)
+        if build_number:
+            # Polling for build status
+            while True:
+                status = get_build_status(job_name, build_number)
+                if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
+                    break
+                print(f"Waiting for build {build_number} of {job_name} to complete...")
+                time.sleep(poll_interval)
+
+            # Write the results to the output sheet
+            output_ws.append([
+                app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, status
+            ])
+
+    # Save the output workbook
+    output_wb.save('jobs_status.xlsx')
 
 if __name__ == "__main__":
     main()
