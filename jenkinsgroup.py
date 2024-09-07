@@ -1,11 +1,13 @@
 import openpyxl
 import requests
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 jenkins_url = "http://your-jenkins-url"  # Base URL for Jenkins
 username = "your-username"
 api_token = "your-api-token"
 poll_interval = 10  # Time in seconds to wait between status checks
+max_threads = 15  # Adjust based on your server's capability and system resources
 
 def trigger_job(job_name, params):
     url = f"{jenkins_url}/job/{job_name}/buildWithParameters"
@@ -49,6 +51,42 @@ def get_build_status(job_name, build_number):
         print(f"Failed to get status for {job_name}: {response.status_code}")
         return 'UNKNOWN'
 
+def process_row(row):
+    app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc = row[:8]
+
+    # Convert CBC to string and handle boolean if necessary
+    if isinstance(cbc, bool):
+        cbc = 'true' if cbc else 'false'
+    elif isinstance(cbc, str):
+        cbc = cbc.strip().lower()
+        cbc = 'true' if cbc == 'yes' else 'false'
+    else:
+        cbc = 'false'  # Default to 'false' if not a string or boolean
+
+    params = {
+        'Env': env,
+        'ChangeRequest': change_request,
+        'ChangeTask': change_task,
+        'ITReleaseVersion': it_release_version,
+        'OBC': obc,
+        'CBC': cbc
+    }
+
+    queue_id = trigger_job(job_name, params)
+    if queue_id:
+        build_number = get_build_number_from_queue(queue_id)
+        if build_number:
+            # Polling for build status
+            while True:
+                status = get_build_status(job_name, build_number)
+                if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
+                    break
+                print(f"Waiting for build {build_number} of {job_name} to complete...")
+                time.sleep(poll_interval)
+
+            return (app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, status)
+    return (app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, 'UNKNOWN')
+
 def main():
     # Load the input workbook and select the active sheet
     input_wb = openpyxl.load_workbook('jobs.xlsx')
@@ -62,48 +100,17 @@ def main():
     headers = ['AppName', 'Job Name', 'Env', 'ChangeRequest', 'ChangeTask', 'ITReleaseVersion', 'OBC', 'CBC', 'Build Status']
     output_ws.append(headers)
 
-    # Iterate over the rows in the input sheet
-    for row in input_ws.iter_rows(min_row=2, values_only=True):
-        if len(row) < 8:
-            print(f"Row with insufficient data: {row}")
-            continue  # Skip rows that don't have enough data
+    # List to hold the rows from the input sheet
+    rows = list(input_ws.iter_rows(min_row=2, values_only=True))
 
-        app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc = row[:8]
-
-        # Convert CBC to string and handle boolean if necessary
-        if isinstance(cbc, bool):
-            cbc = 'true' if cbc else 'false'
-        elif isinstance(cbc, str):
-            cbc = cbc.strip().lower()
-            cbc = 'true' if cbc == 'yes' else 'false'
-        else:
-            cbc = 'false'  # Default to 'false' if not a string or boolean
-
-        params = {
-            'Env': env,
-            'ChangeRequest': change_request,
-            'ChangeTask': change_task,
-            'ITReleaseVersion': it_release_version,
-            'OBC': obc,
-            'CBC': cbc
-        }
-
-        queue_id = trigger_job(job_name, params)
-        if queue_id:
-            build_number = get_build_number_from_queue(queue_id)
-            if build_number:
-                # Polling for build status
-                while True:
-                    status = get_build_status(job_name, build_number)
-                    if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
-                        break
-                    print(f"Waiting for build {build_number} of {job_name} to complete...")
-                    time.sleep(poll_interval)
-
-                # Write the results to the output sheet
-                output_ws.append([
-                    app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, status
-                ])
+    with ThreadPoolExecutor(max_threads) as executor:
+        # Submit tasks to the thread pool
+        futures = [executor.submit(process_row, row) for row in rows]
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            result = future.result()
+            output_ws.append(result)
 
     # Save the output workbook
     output_wb.save('jobs_status.xlsx')
