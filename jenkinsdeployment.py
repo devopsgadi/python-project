@@ -1,89 +1,164 @@
-import pandas as pd
+import openpyxl
 import requests
-from requests.auth import HTTPBasicAuth
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Load the Excel file
-file_path = 'groupdeployment.xlsx'
-df = pd.read_excel(file_path)
+# Base URL for Jenkins
+jenkins_url = "  # Base URL for Jenkins (if needed for other purposes)
+username = ""
+api_token = ""
+poll_interval = 10  # Time in seconds to wait between status checks
+max_threads = 60 # Adjust based on your server's capability and system resources
 
-# Jenkins credentials
-jenkins_user = ''
-jenkins_token = ''
-
-
-df['OBC'] = df['OBC'].astype(bool)
-df['CBC'] = df['CBC'].astype(bool)
-df['Env'] = df['Env'].astype(str)
-df['ITReleasedVersion'] = df['ITReleasedVersion'].astype(str)
-df['CTaskPROD'] = df['CTaskPROD'].astype(str)
-df['ChangeNumberPROD'] = df['ChangeNumberPROD'].astype(str)
-
-# Function to trigger Jenkins job
-def trigger_jenkins_job(job_url, ITReleasedVersion, env, obc, cbc):
-    url = f"{job_url}/buildWithParameters"
-    params = {
-        'ITReleasedVersion': ITReleasedVersion,
-        'env': env,
-        'OBC': 'true' if obc else 'false',
-        'CBC': 'true' if cbc else 'false'
-    }
-    
-    # Trigger the Jenkins job with basic authentication
-    response = requests.post(url, params=params, auth=HTTPBasicAuth(jenkins_user, jenkins_token))
-    
-    if response.status_code == 201:
-        print(f"Successfully triggered job at {job_url} with version {ITReleasedVersion}")
-        # Extract build number or URL from the response headers
-        build_url = response.headers.get('Location', '')
-        return build_url
-    else:
-        print(f"Failed to trigger job at {job_url}. Status code: {response.status_code}, Response: {response.text}")
-        return None
-
-# Function to check build status
-def get_build_status(build_url):
-    if not build_url:
-        return 'Unknown'
-    
-    # Check the build status using Jenkins API
-    response = requests.get(build_url + 'api/json', auth=HTTPBasicAuth(jenkins_user, jenkins_token))
-    
-    if response.status_code == 200:
-        build_info = response.json()
-        if build_info.get('building'):
-            return 'In Progress'
-        elif build_info.get('result') == 'SUCCESS':
-            return 'Success'
-        elif build_info.get('result') == 'FAILURE':
-            return 'Failure'
+def trigger_job(job_name, params):
+    url = f"{job_name}/buildWithParameters"
+    try:
+        response = requests.post(url, params=params, auth=(username, api_token))
+        if response.status_code == 201:
+            print(f"Triggered {job_name}: {response.status_code}")
+            location_header = response.headers.get('Location', '')
+            if location_header:
+                queue_id = location_header.split('/')[-2]
+                return queue_id
         else:
-            return 'Unknown'
+            print(f"Failed to trigger {job_name}: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"Exception during triggering {job_name}: {e}")
+    return None
+
+def get_build_number_from_queue(queue_id):
+    url = f"ur/queue/item/{queue_id}/api/json"
+    while True:
+        try:
+            response = requests.get(url, auth=(username, api_token))
+            if response.status_code == 200:
+                queue_info = response.json()
+                if queue_info.get('executable'):
+                    build_number = queue_info['executable']['number']
+                    return build_number
+                elif queue_info.get('cancelled'):
+                    print(f"Build with queueId {queue_id} was cancelled.")
+                    return None
+                print(f"Waiting for job {queue_id} to start...")
+            else:
+                print(f"Failed to get queue info for {queue_id}: {response.status_code}")
+        except requests.RequestException as e:
+            print(f"Exception during getting queue info for {queue_id}: {e}")
+        time.sleep(poll_interval)
+
+def get_build_status(job_name, build_number):
+    url = f"{job_name}/{build_number}/api/json"
+    try:
+        response = requests.get(url, auth=(username, api_token))
+        if response.status_code == 200:
+            build_info = response.json()
+            status = build_info.get('result', 'UNKNOWN')
+            return status
+        else:
+            print(f"Failed to get status for {job_name}: {response.status_code}")
+    except requests.RequestException as e:
+        print(f"Exception during getting build status for {job_name}: {e}")
+    return 'UNKNOWN'
+
+def process_row(row):
+    # Unpack row values and include Branch
+    app_name, job_name, branch_name, env, it_release_version, change_request, change_task, obc, cbc = row[:9]
+
+    # Convert OBC and CBC to string and handle boolean if necessary
+    if isinstance(obc, bool):
+        obc = 'true' if obc else 'false'
+    elif isinstance(obc, str):
+        obc = obc.strip().lower()
+        obc = 'true' if obc == 'yes' else 'false'
     else:
-        print(f"Failed to get build status. Status code: {response.status_code}, Response: {response.text}")
-        return 'Error'
+        obc = 'false'  # Default to 'false' if not a string or boolean
 
-# Iterate over each row in the dataframe and trigger the Jenkins job
-for index, row in df.iterrows():
-    app_name = row['AppName']
-    job_url = row['JenkinsJobURL']
-    ITReleasedVersion = row['ITReleasedVersion']
-    env = row['Env']
-    obc = row['OBC']
-    cbc = row['CBC']
+    if isinstance(cbc, bool):
+        cbc = 'true' if cbc else 'false'
+    elif isinstance(cbc, str):
+        cbc = cbc.strip().lower()
+        cbc = 'true' if cbc == 'yes' else 'false'
+    else:
+        cbc = 'false'  # Default to 'false' if not a string or boolean
+        
+    # if isinstance(env, str):
+    #     env_values = ','.join([e.strip() for e in env.split(',')])
+    #     print(f"resr=== {env_values}")
+    # else:
+    #     env_values = [env]
 
-    print(f"Processing {app_name}...")
-    build_url = trigger_jenkins_job(job_url, ITReleasedVersion, env, obc, cbc)
+    #env_values = [env.strip() for env in env.split(',') if env.strip()]
+    #env_values = env.split(',')
+    #for env in env_values:
+    # environments = env.split(',')
 
-    # Wait some time for the build to start
-    time.sleep(30)  # Adjust the sleep time as needed
+    # for env in environments:
+    #     env = env.strip()  # Remove any extra whitespace
+    #     print(f"Processing {app_name} for environment {env}...")
 
-    # Get and update the build status
-    if obc:
-        build_status = get_build_status(build_url)
-        df.at[index, 'BuildStatus_OBC'] = build_status
-    if cbc:
-        build_status = get_build_status(build_url)
-        df.at[index, 'BuildStatus_CBC'] = build_status
+    params = {
+        'ENV': env,
+        'BRANCH': branch_name,
+        'ITReleasedVersion': it_release_version,
+        'ChangeNumberPROD': change_request,
+        'CTaskPROD': change_task,
+        'obc': obc,
+        'cbc': cbc,
+    }
+    ## this logic to select appname for Mono-Repo Jobs
+    if app_name:
+       params['AppName'] = app_name 
+       
+    if app_name:
+       params['ENV'] = env 
+    #include Env as comma-seperated string ot multiple paramater
+    #params['ENV'] = ''.join(env_values)
 
-# Save the updated Excel file
-df.to_excel(file_path, index=False)
+    queue_id = trigger_job(job_name, params)
+    if queue_id:
+        build_number = get_build_number_from_queue(queue_id)
+        if build_number:
+            # Polling for build status
+            while True:
+                status = get_build_status(job_name, build_number)
+                if status in ['SUCCESS', 'FAILURE', 'UNSTABLE', 'ABORTED']:
+                    break
+                print(f"Waiting for build {build_number} of {job_name} to complete...")
+                time.sleep(poll_interval)
+
+            return (app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, branch_name, status)
+    return (app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, branch_name, 'UNKNOWN')
+
+def main():
+    # Load the input workbook and select the active sheet
+    input_wb = openpyxl.load_workbook('jobs.xlsx')
+    input_ws = input_wb.active
+
+    # Create the output workbook and sheet
+    output_wb = openpyxl.Workbook()
+    output_ws = output_wb.active
+
+    # Define the header row
+    headers = ['AppName', 'Job Name', 'ENV', 'ChangeNumberPROD', 'CTaskPROD', 'ITReleaseVersion', 'OBC', 'CBC', 'Branch', 'Build Status']
+    output_ws.append(headers)
+
+    # List to hold the rows from the input sheet
+    rows = list(input_ws.iter_rows(min_row=2, values_only=True))
+
+    with ThreadPoolExecutor(max_threads) as executor:
+        # Submit tasks to the thread pool
+        futures = [executor.submit(process_row, row) for row in rows]
+        
+        # Collect results as they complete
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                output_ws.append(result)
+            except Exception as e:
+                print(f"Exception during processing a row: {e}")
+
+    # Save the output workbook
+    output_wb.save('jobs_status.xlsx')
+
+if __name__ == "__main__":
+    main()
