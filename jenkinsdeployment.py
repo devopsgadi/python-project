@@ -1,10 +1,11 @@
+import argparse
 import openpyxl
 import requests
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Base URL for Jenkins
-jenkins_url = "  # Base URL for Jenkins (if needed for other purposes)
+jenkins_url = "master-3"  # Base URL for Jenkins (if needed for other purposes)
 username = ""
 api_token = ""
 poll_interval = 10  # Time in seconds to wait between status checks
@@ -27,7 +28,7 @@ def trigger_job(job_name, params):
     return None
 
 def get_build_number_from_queue(queue_id):
-    url = f"ur/queue/item/{queue_id}/api/json"
+    url = f"/master-3/queue/item/{queue_id}/api/json"
     while True:
         try:
             response = requests.get(url, auth=(username, api_token))
@@ -60,9 +61,9 @@ def get_build_status(job_name, build_number):
         print(f"Exception during getting build status for {job_name}: {e}")
     return 'UNKNOWN'
 
-def process_row(row):
+def process_row(row,env_value):
     # Unpack row values and include Branch
-    app_name, job_name, branch_name, env, it_release_version, change_request, change_task, obc, cbc = row[:9]
+    app_name, job_name, branch_name, it_release_version, change_request, change_task, obc, cbc = row[:8]
 
     # Convert OBC and CBC to string and handle boolean if necessary
     if isinstance(obc, bool):
@@ -79,40 +80,21 @@ def process_row(row):
         cbc = cbc.strip().lower()
         cbc = 'true' if cbc == 'yes' else 'false'
     else:
-        cbc = 'false'  # Default to 'false' if not a string or boolean
-        
-    # if isinstance(env, str):
-    #     env_values = ','.join([e.strip() for e in env.split(',')])
-    #     print(f"resr=== {env_values}")
-    # else:
-    #     env_values = [env]
-
-    #env_values = [env.strip() for env in env.split(',') if env.strip()]
-    #env_values = env.split(',')
-    #for env in env_values:
-    # environments = env.split(',')
-
-    # for env in environments:
-    #     env = env.strip()  # Remove any extra whitespace
-    #     print(f"Processing {app_name} for environment {env}...")
+        cbc = 'false'  # Default to 'false' if not a string or boolean      
 
     params = {
-        'ENV': env,
         'BRANCH': branch_name,
         'ITReleasedVersion': it_release_version,
         'ChangeNumberPROD': change_request,
         'CTaskPROD': change_task,
         'obc': obc,
         'cbc': cbc,
+        'ENV': env_value
     }
     ## this logic to select appname for Mono-Repo Jobs
     if app_name:
        params['AppName'] = app_name 
        
-    if app_name:
-       params['ENV'] = env 
-    #include Env as comma-seperated string ot multiple paramater
-    #params['ENV'] = ''.join(env_values)
 
     queue_id = trigger_job(job_name, params)
     if queue_id:
@@ -126,11 +108,14 @@ def process_row(row):
                 print(f"Waiting for build {build_number} of {job_name} to complete...")
                 time.sleep(poll_interval)
 
-            return (app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, branch_name, status)
-    return (app_name, job_name, env, change_request, change_task, it_release_version, obc, cbc, branch_name, 'UNKNOWN')
+            return (app_name, job_name, env_value, change_request, change_task, it_release_version, obc, cbc, branch_name, status)
+    return (app_name, job_name, env_value, change_request, change_task, it_release_version, obc, cbc, branch_name, 'UNKNOWN')
 
 def main():
     # Load the input workbook and select the active sheet
+    parser = argparse.ArgumentParser(description = 'trigger Jenkins jobs based on Excel data')
+    parser.add_argument('env_value', type=str, help='Envronment value to pass to the Jenkins job')
+    args = parser.parse_args()
     input_wb = openpyxl.load_workbook('jobs.xlsx')
     input_ws = input_wb.active
 
@@ -147,7 +132,7 @@ def main():
 
     with ThreadPoolExecutor(max_threads) as executor:
         # Submit tasks to the thread pool
-        futures = [executor.submit(process_row, row) for row in rows]
+        futures = [executor.submit(process_row, row, args.env_value) for row in rows]
         
         # Collect results as they complete
         for future in as_completed(futures):
