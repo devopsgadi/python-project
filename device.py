@@ -4,12 +4,10 @@
 """ Finds simulator devices for use in devops process."""
 
 import sys
-import os
 import json
 import re
 import subprocess
 import random
-from types import SimpleNamespace
 import argparse
 from collections import namedtuple
 
@@ -17,27 +15,11 @@ from collections import namedtuple
 __version__ = "0.0.9"
 
 # Tuple types
-DeviceCategory = namedtuple('Category', ['platform', 'version', 'raw_input'])
+DeviceCategory = namedtuple('DeviceCategory', ['platform', 'version', 'raw_input'])
 CategoryItem = namedtuple("CategoryItem", "category count")
 
 # only get a device belonging to this platform type
 DEVICE_CATEGORY_PLATFORM = "iOS"
-
-# simple debug print helper
-def dprint(name, item):
-    if not args.debug:
-        return
-    if isinstance(item, tuple):
-        print(f'\n{name}\n----------\n{prettyprint_namedtuple(item)}')
-    else:
-        print(f'\n{name}\n----------\n{item}')
-
-# pretty print for named tuples
-def prettyprint_namedtuple(namedtuple):
-    string = "{0.__name__}( ".format(type(namedtuple))
-    for f_n, f_v in zip(namedtuple._fields, namedtuple):
-        string += f"{f_n}={f_v!r} "
-    return string + ")"
 
 # Initiate the parser
 parser = argparse.ArgumentParser(description=__doc__)
@@ -47,19 +29,35 @@ parser.add_argument("--debug", help="enable debug output", action="store_true")
 parser.add_argument("--highest", help="show highest device version found", action="store_true")
 parser.add_argument("--bestruntime", help="show the best runtime device available", action="store_true")
 
+def dprint(name, item):
+    """Debug print function to display variable states."""
+    if not args.debug:
+        return
+    if isinstance(item, tuple):
+        print(f'\n{name}\n----------\n{prettyprint_namedtuple(item)}')
+    else:
+        print(f'\n{name}\n----------\n{item}')
+
+def prettyprint_namedtuple(namedtuple):
+    """Pretty print for named tuples."""
+    string = f"{namedtuple.__class__.__name__}( "
+    for field in namedtuple._fields:
+        string += f"{field}={getattr(namedtuple, field)!r}, "
+    return string + ")"
+
 def find_devices() -> dict:
-    """Get JSON list of all devices 'available' from 'xcrun simctl'
+    """Get JSON list of all devices 'available' from 'xcrun simctl'.
 
     Returns:
         dict: json parsed into dict
     """
     cmd = ['xcrun', 'simctl', 'list', '--json', 'devices', 'available']
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
+
     if result.returncode != 0:
         print(f"Error executing command: {result.stderr.decode().strip()}")
         return None
-    
+
     devices = result.stdout.decode('utf-8')
     try:
         json_devices = json.loads(devices)
@@ -69,7 +67,7 @@ def find_devices() -> dict:
         return None
 
 def filter_device_categories(devices: dict) -> list:
-    """ Get device categories with count as list of tuple (string, count)"""
+    """Get device categories with count as list of tuple (string, count)"""
     all_devices = devices['devices']
     category_list = []
     for category in all_devices:
@@ -80,9 +78,7 @@ def filter_device_categories(devices: dict) -> list:
     return category_list
 
 def get_family_version_from_category(raw_input: str) -> DeviceCategory:
-    """ Get the platform family and version from a device name as a tuple 
-    "com.apple.CoreSimulator.SimRuntime.iOS-17-0-1", "com.apple.CoreSimulator.SimRuntime.iOS-17.4", or "com.apple.CoreSimulator.SimRuntime.iOS-17" as input
-    """
+    """Get the platform family and version from a device name as a tuple."""
     regex = r"\.([A-z]+)-([0-9]+)(?:-([0-9]+))?(?:-([0-9]+))?"  # Adjusted regex for version parsing
     matches = re.finditer(regex, raw_input, re.MULTILINE)
     for matchNum, match in enumerate(matches, start=1):
@@ -94,7 +90,7 @@ def get_family_version_from_category(raw_input: str) -> DeviceCategory:
         return DeviceCategory(platform, version, raw_input)
 
 def highest_category_in_platform(data: dict, platform: str) -> DeviceCategory:
-    """ Find and return the device category having the highest version number """
+    """Find and return the device category having the highest version number."""
     categories_list = filter_device_categories(data)
     highest = DeviceCategory('iOS', (0, 0, 0), 'Not Valid')  # Changed to tuple
     for category_item in categories_list:
@@ -105,7 +101,7 @@ def highest_category_in_platform(data: dict, platform: str) -> DeviceCategory:
     return highest
 
 def get_devices_by_category(data: dict, device_category: DeviceCategory) -> list:
-    """Get all devices matching category"""
+    """Get all devices matching category."""
     all_devices = data['devices']
     valid_devices_list = []
     for category in all_devices:
@@ -118,7 +114,7 @@ def get_devices_by_category(data: dict, device_category: DeviceCategory) -> list
 
 def get_random_shutdown_device(data: list) -> str:
     """Return a random UUID from the devices list passed in
-    Where they are an iPhone and state is 'Shutdown'
+    where they are an iPhone and state is 'Shutdown'.
     """
     filter_dlist = [d for d in data if d['name'].startswith('iPhone') and d['state'] == 'Shutdown']
     if filter_dlist: 
@@ -127,7 +123,7 @@ def get_random_shutdown_device(data: list) -> str:
         return None
 
 def find_best_runtime_device(data: dict) -> str:
-    """Return the best runtime device available"""
+    """Return the best runtime device available."""
     highest_category = highest_category_in_platform(data, DEVICE_CATEGORY_PLATFORM)
     filtered_devices = get_devices_by_category(data, highest_category)
     if filtered_devices:
@@ -136,7 +132,7 @@ def find_best_runtime_device(data: dict) -> str:
     return None
 
 def output_one_random_device(data: dict):
-    """ Output one random available device """
+    """Output one random available device."""
     item = None
     highest_category = highest_category_in_platform(data, DEVICE_CATEGORY_PLATFORM)
     filtered_devices = get_devices_by_category(data, highest_category)
@@ -149,7 +145,7 @@ def output_one_random_device(data: dict):
         exit(1)
 
 def output_all_devices(data: dict):
-    """ Output all available devices in raw format """
+    """Output all available devices in raw format."""
     highest_category = highest_category_in_platform(data, DEVICE_CATEGORY_PLATFORM)
     filtered_devices = get_devices_by_category(data, highest_category)
     if filtered_devices:
@@ -180,4 +176,13 @@ if __name__ == "__main__":
         elif args.list:
             output_all_devices(jdata)
         elif args.bestruntime:
-            best_device = find
+            best_device = find_best_runtime_device(jdata)
+            if best_device:
+                print(best_device)
+            else:
+                print("No suitable runtime device found.")
+                exit(1)
+        else:
+            output_one_random_device(jdata)
+    else:
+        exit(1)  # no devices, exit non-zero.
