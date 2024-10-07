@@ -3,17 +3,6 @@
 
 """ Finds simulator devices for use in devops process."""
 
-# Version:
-#   0.0.9 - Fixed issue if someone was using older command line tools -- we now find the latest device category supported by CLT being used
-#   0.0.8 - Sims were not showing after installing Xcode 13.3, but still using Xcode 13.2.1 in command line; added more debug logging
-#   0.0.7 - Added --list to show available devices in raw format
-#   0.0.6 - Now returns device identifier without trailing newline; CocoaPods prefers w/o newline
-#   0.0.5 - Find newest devices first; this way we auto support min OS versions that are greater than our oldest devices
-#   0.0.4 - Review and test finding only devices NOT booted
-#   0.0.3 - Added versioning and command line args so we can more easily validate what version this file is
-#   0.0.2 - Updated to capture any iOS 14 device not only iOS 14.0
-#   0.0.1 - Initial
-
 import sys
 import os
 import json
@@ -38,17 +27,16 @@ DEVICE_CATEGORY_PLATFORM = "iOS"
 def dprint(name, item):
     if not args.debug:
         return
-    if item is namedtuple:
+    if isinstance(item, tuple):
         print(f'\n{name}\n----------\n{prettyprint_namedtuple(item)}')
     else:
         print(f'\n{name}\n----------\n{item}')
 
 # pretty print for named tuples
-def prettyprint_namedtuple(namedtuple, field_spaces):
-    assert len(field_spaces) == len(namedtuple._fields)
+def prettyprint_namedtuple(namedtuple):
     string = "{0.__name__}( ".format(type(namedtuple))
-    for f_n, f_v, f_s in zip(namedtuple._fields, namedtuple, field_spaces):
-        string += "{f_n}={f_v!r:<{f_s}}".format(f_n=f_n, f_v=f_v, f_s=f_s)
+    for f_n, f_v in zip(namedtuple._fields, namedtuple):
+        string += f"{f_n}={f_v!r} "
     return string + ")"
 
 # Initiate the parser
@@ -66,12 +54,18 @@ def find_devices() -> dict:
         dict: json parsed into dict
     """
     cmd = ['xcrun', 'simctl', 'list', '--json', 'devices', 'available']
-    result = subprocess.run(cmd, stdout=subprocess.PIPE)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    
+    if result.returncode != 0:
+        print(f"Error executing command: {result.stderr.decode().strip()}")
+        return None
+    
     devices = result.stdout.decode('utf-8')
     try:
         json_devices = json.loads(devices)
         return json_devices
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
+        print(f"JSON Decode Error: {e}")
         return None
 
 def filter_device_categories(devices: dict) -> list:
@@ -86,21 +80,20 @@ def filter_device_categories(devices: dict) -> list:
     return category_list
 
 def get_family_version_from_category(raw_input: str) -> DeviceCategory:
-    """ Get the platform family and version from a device name as float 
-    "com.apple.CoreSimulator.SimRuntime.iOS-16-4" as input
+    """ Get the platform family and version from a device name as a tuple 
+    "com.apple.CoreSimulator.SimRuntime.iOS-17-0-1" as input
     """
-    regex = r"\.([A-z]+)-([0-9]+-[0-9]+)"
+    regex = r"\.([A-z]+)-([0-9]+)-([0-9]+)(?:-([0-9]+))?"  # Adjusted regex for version parsing
     matches = re.finditer(regex, raw_input, re.MULTILINE)
     for matchNum, match in enumerate(matches, start=1):
         platform = match[1]
-        version = match[2]
-        proper_version = float(version.replace("-", "."))  # 15-1 -> 15.1
-        return DeviceCategory(platform, proper_version, raw_input)
+        version = tuple(int(part) for part in match[2:5] if part is not None)  # Create a tuple of version parts
+        return DeviceCategory(platform, version, raw_input)
 
 def highest_category_in_platform(data: dict, platform: str) -> DeviceCategory:
     """ Find and return the device category having the highest version number """
     categories_list = filter_device_categories(data)
-    highest = DeviceCategory('iOS', 0.0, 'Not Valid')
+    highest = DeviceCategory('iOS', (0, 0, 0), 'Not Valid')  # Changed to tuple
     for category_item in categories_list:
         dev_category = get_family_version_from_category(category_item.category)
         if dev_category.platform == platform and dev_category.version > highest.version and category_item.count > 0:
