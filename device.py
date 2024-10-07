@@ -81,13 +81,16 @@ def filter_device_categories(devices: dict) -> list:
 
 def get_family_version_from_category(raw_input: str) -> DeviceCategory:
     """ Get the platform family and version from a device name as a tuple 
-    "com.apple.CoreSimulator.SimRuntime.iOS-17-0-1" as input
+    "com.apple.CoreSimulator.SimRuntime.iOS-17-0-1", "com.apple.CoreSimulator.SimRuntime.iOS-17.4", or "com.apple.CoreSimulator.SimRuntime.iOS-17" as input
     """
-    regex = r"\.([A-z]+)-([0-9]+)-([0-9]+)(?:-([0-9]+))?"  # Adjusted regex for version parsing
+    regex = r"\.([A-z]+)-([0-9]+)(?:-([0-9]+))?(?:-([0-9]+))?"  # Adjusted regex for version parsing
     matches = re.finditer(regex, raw_input, re.MULTILINE)
     for matchNum, match in enumerate(matches, start=1):
         platform = match[1]
-        version = tuple(int(part) for part in match[2:5] if part is not None)  # Create a tuple of version parts
+        major = int(match[2])
+        minor = int(match[3]) if match[3] else 0  # Default to 0 if not provided
+        patch = int(match[4]) if match[4] else 0  # Default to 0 if not provided
+        version = (major, minor, patch)  # Create a tuple of version parts
         return DeviceCategory(platform, version, raw_input)
 
 def highest_category_in_platform(data: dict, platform: str) -> DeviceCategory:
@@ -177,13 +180,4 @@ if __name__ == "__main__":
         elif args.list:
             output_all_devices(jdata)
         elif args.bestruntime:
-            best_device = find_best_runtime_device(jdata)
-            if best_device:
-                print(best_device)
-            else:
-                print("No suitable runtime device found.")
-                exit(1)
-        else:
-            output_one_random_device(jdata)
-    else:
-        exit(1)  # no devices, exit non-zero.
+            best_device = find
