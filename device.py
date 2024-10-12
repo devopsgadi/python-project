@@ -109,14 +109,19 @@ def get_random_shutdown_device(data: dict) -> str:
 
 def output_one_random_device(data: dict):
     highest_category = highest_category_in_platform(data, DEVICE_CATEGORY_PLATFORM)
-    filtered_devices = get_devices_by_category(data, highest_category)
-    item = get_random_shutdown_device(filtered_devices)
-    if item:
-        print(f"{item['udid']}", end='')
-        exit(0)
-    else:
-        print("No valid shutdown device found, exiting")
-        exit(1)
+    
+    # Retry getting the filtered devices until a shutdown device is found or timeout
+    while True:
+        filtered_devices = get_devices_by_category(data, highest_category)
+        item = get_random_shutdown_device(filtered_devices)
+        
+        if item:
+            print(f"{item['udid']}", end='')
+            exit(0)
+        
+        print("No valid shutdown device found, waiting for more devices...")
+        time.sleep(30)  # Wait a bit before trying again
+        data = find_devices()  # Refresh the device list
 
 def output_all_devices(data: dict):
     highest_category = highest_category_in_platform(data, DEVICE_CATEGORY_PLATFORM)
