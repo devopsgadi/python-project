@@ -2,14 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import os
 import json
 import re
 import subprocess
 import random
 import time
 import argparse
-from types import SimpleNamespace
 from collections import namedtuple
 
 __version__ = "0.0.9"
@@ -139,11 +137,16 @@ if __name__ == "__main__":
     except argparse.ArgumentError:
         print('Catching an argumentError')
 
-    if args.wait:
+    # Check for devices initially
+    jdata = find_devices()
+
+    # If no devices found and --wait is set, try to wait for a device
+    if jdata is None or (not jdata['devices'] and args.wait):
         if not wait_for_device():
             exit(1)  # Exit with error if device not found after waiting
+        jdata = find_devices()  # Recheck devices after waiting
 
-    jdata = find_devices()
+    # Now process the devices if any are found
     if jdata:
         if args.highest:
             highest_category = highest_category_in_platform(jdata, DEVICE_CATEGORY_PLATFORM)
