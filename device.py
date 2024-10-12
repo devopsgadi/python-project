@@ -60,10 +60,10 @@ def wait_for_device(timeout=720):  # 12 minutes timeout
         devices = find_devices()
         if devices and devices['devices']:
             print("Device is now available!")
-            return True
+            return devices  # Return the found devices
         time.sleep(30)  # Check every 30 seconds
     print("Timeout: Device not found after waiting.")
-    return False
+    return None
 
 def filter_device_categories(devices: dict) -> list:
     all_devices = devices['devices']
@@ -115,7 +115,7 @@ def output_one_random_device(data: dict):
         print(f"{item['udid']}", end='')
         exit(0)
     else:
-        print(f"Error finding valid device, exiting")
+        print("No valid shutdown device found, exiting")
         exit(1)
 
 def output_all_devices(data: dict):
@@ -125,7 +125,7 @@ def output_all_devices(data: dict):
         for item in filtered_devices:
             print(item)
     else:
-        print(f"Error finding devices, exiting")
+        print("No devices found in the specified category, exiting")
         exit(1)
 
 if __name__ == "__main__":
@@ -142,9 +142,9 @@ if __name__ == "__main__":
 
     # If no devices found and --wait is set, try to wait for a device
     if jdata is None or (not jdata['devices'] and args.wait):
-        if not wait_for_device():
+        jdata = wait_for_device()  # Wait for devices to become available
+        if jdata is None:  # Check if waiting timed out
             exit(1)  # Exit with error if device not found after waiting
-        jdata = find_devices()  # Recheck devices after waiting
 
     # Now process the devices if any are found
     if jdata:
