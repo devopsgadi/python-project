@@ -6,17 +6,15 @@ from requests.auth import HTTPBasicAuth
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Base URL for Jenkins
-jenkins_url = "https://cloudbees.com/master-3"  # Base URL for Jenkins (if needed for other purposes)
-username = ""
-#api_token = ""
-password = ""
+jenkins_url = "https://jenkins/master-3"  # Base URL for Jenkins
+username = "your_username"  # Replace with your Jenkins username
+password = "your_password"  # Replace with your Jenkins password
 poll_interval = 10  # Time in seconds to wait between status checks
-max_threads = 60 # Adjust based on your server's capability and system resources
+max_threads = 60  # Adjust based on your server's capability and system resources
 
 def trigger_job(job_name, params):
-    url = f"{job_name}/buildWithParameters"
+    url = f"{jenkins_url}/{job_name}/buildWithParameters"
     try:
-        #response = requests.post(url, params=params, auth=(username, api_token))
         response = requests.post(url, params=params, auth=HTTPBasicAuth(username, password))
         if response.status_code == 201:
             print(f"Triggered {job_name}: {response.status_code}")
@@ -31,10 +29,10 @@ def trigger_job(job_name, params):
     return None
 
 def get_build_number_from_queue(queue_id):
-    url = f"https://cloudbees.com/master-3/queue/item/{queue_id}/api/json"
+    url = f"{jenkins_url}/queue/item/{queue_id}/api/json"
     while True:
         try:
-            response = requests.get(url, auth=(username, api_token))
+            response = requests.get(url, auth=HTTPBasicAuth(username, password))
             if response.status_code == 200:
                 queue_info = response.json()
                 if queue_info.get('executable'):
@@ -51,9 +49,9 @@ def get_build_number_from_queue(queue_id):
         time.sleep(poll_interval)
 
 def get_build_status(job_name, build_number):
-    url = f"{job_name}/{build_number}/api/json"
+    url = f"{jenkins_url}/{job_name}/{build_number}/api/json"
     try:
-        response = requests.get(url, auth=(username, api_token))
+        response = requests.get(url, auth=HTTPBasicAuth(username, password))
         if response.status_code == 200:
             build_info = response.json()
             status = build_info.get('result', 'UNKNOWN')
@@ -64,26 +62,20 @@ def get_build_status(job_name, build_number):
         print(f"Exception during getting build status for {job_name}: {e}")
     return 'UNKNOWN'
 
-def process_row(row,env_value):
-    # Unpack row values and include Branch
-    app_name, job_name, branch_name, it_release_version, change_request, change_task, obc, cbc = row[:8]
+def process_row(row, env_value):
+    # Unpack row values and strip spaces from headers
+    app_name = row[0]
+    job_name = row[1].strip()
+    branch_name = row[2].strip()
+    it_release_version = row[3].strip()
+    change_request = row[4].strip()
+    change_task = row[5].strip()
+    obc = row[6]
+    cbc = row[7]
 
     # Convert OBC and CBC to string and handle boolean if necessary
-    if isinstance(obc, bool):
-        obc = 'true' if obc else 'false'
-    elif isinstance(obc, str):
-        obc = obc.strip().lower()
-        obc = 'true' if obc == 'yes' else 'false'
-    else:
-        obc = 'false'  # Default to 'false' if not a string or boolean
-
-    if isinstance(cbc, bool):
-        cbc = 'true' if cbc else 'false'
-    elif isinstance(cbc, str):
-        cbc = cbc.strip().lower()
-        cbc = 'true' if cbc == 'yes' else 'false'
-    else:
-        cbc = 'false'  # Default to 'false' if not a string or boolean      
+    obc = str(obc).strip().lower() if isinstance(obc, (str, bool)) else 'false'
+    cbc = str(cbc).strip().lower() if isinstance(cbc, (str, bool)) else 'false'
 
     params = {
         'BRANCH': branch_name,
@@ -94,10 +86,9 @@ def process_row(row,env_value):
         'cbc': cbc,
         'ENV': env_value
     }
-    ## this logic to select appname for Mono-Repo Jobs
+
     if app_name:
        params['AppName'] = app_name 
-       
 
     queue_id = trigger_job(job_name, params)
     if queue_id:
@@ -116,8 +107,8 @@ def process_row(row,env_value):
 
 def main():
     # Load the input workbook and select the active sheet
-    parser = argparse.ArgumentParser(description = 'trigger Jenkins jobs based on Excel data')
-    parser.add_argument('env_value', type=str, help='Envronment value to pass to the Jenkins job')
+    parser = argparse.ArgumentParser(description='Trigger Jenkins jobs based on Excel data')
+    parser.add_argument('env_value', type=str, help='Environment value to pass to the Jenkins job')
     args = parser.parse_args()
     input_wb = openpyxl.load_workbook('jobs.xlsx')
     input_ws = input_wb.active
