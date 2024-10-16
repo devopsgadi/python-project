@@ -31,7 +31,7 @@ def trigger_job(job_name, params):
     return None
 
 def get_build_number_from_queue(queue_id):
-    url = f"https://cloudbees.us.bank-dns.com/master-3/queue/item/{queue_id}/api/json"
+    url = f"https://cloudbees.com/master-3/queue/item/{queue_id}/api/json"
     while True:
         try:
             response = requests.get(url, auth=(username, api_token))
