@@ -6,7 +6,7 @@ from requests.auth import HTTPBasicAuth
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Base URL for Jenkins
-jenkins_url = "https://cloudbees.us.bank-dns.com/master-3"  # Base URL for Jenkins (if needed for other purposes)
+jenkins_url = "https://cloudbees.com/master-3"  # Base URL for Jenkins (if needed for other purposes)
 username = ""
 #api_token = ""
 password = ""
