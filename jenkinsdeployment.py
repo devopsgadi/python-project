@@ -2,19 +2,22 @@ import argparse
 import openpyxl
 import requests
 import time
+from requests.auth import HTTPBasicAuth
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Base URL for Jenkins
-jenkins_url = "master-3"  # Base URL for Jenkins (if needed for other purposes)
+jenkins_url = "https://cloudbees.us.bank-dns.com/master-3"  # Base URL for Jenkins (if needed for other purposes)
 username = ""
-api_token = ""
+#api_token = ""
+password = ""
 poll_interval = 10  # Time in seconds to wait between status checks
 max_threads = 60 # Adjust based on your server's capability and system resources
 
 def trigger_job(job_name, params):
     url = f"{job_name}/buildWithParameters"
     try:
-        response = requests.post(url, params=params, auth=(username, api_token))
+        #response = requests.post(url, params=params, auth=(username, api_token))
+        response = requests.post(url, params=params, auth=HTTPBasicAuth(username, password))
         if response.status_code == 201:
             print(f"Triggered {job_name}: {response.status_code}")
             location_header = response.headers.get('Location', '')
@@ -28,7 +31,7 @@ def trigger_job(job_name, params):
     return None
 
 def get_build_number_from_queue(queue_id):
-    url = f"/master-3/queue/item/{queue_id}/api/json"
+    url = f"https://cloudbees.us.bank-dns.com/master-3/queue/item/{queue_id}/api/json"
     while True:
         try:
             response = requests.get(url, auth=(username, api_token))
