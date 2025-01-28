@@ -1,0 +1,58 @@
+// Combined build.gradle (Root Level)
+task buildAndroidRelease(type: Exec) {
+    group = "Build"
+    description = "Build the Android app release"
+    commandLine 'gradle', 'assembleRelease'
+}
+
+task uploadAndroidToFirebase(type: Exec) {
+    group = "Firebase"
+    description = "Upload Android APK/AAB to Firebase App Distribution"
+    
+    // Set the paths and Firebase app ID
+    def appId = "YOUR_FIREBASE_APP_ID"  // Replace with your Firebase App ID
+    def testersGroup = "YOUR_TESTER_GROUP"  // Replace with your tester group
+
+    // Path to your AAB or APK file
+    def file = "$buildDir/outputs/bundle/release/app-release.aab"  // Example path to AAB
+
+    if (!file.exists()) {
+        throw new GradleException("App bundle not found: $file")
+    }
+
+    // Firebase CLI command to upload the app to Firebase
+    commandLine "firebase", "appdistribution:distribute", file, "--app", appId, "--groups", testersGroup
+}
+
+task buildIOSRelease(type: Exec) {
+    group = "Build"
+    description = "Build the iOS app release"
+    commandLine 'xcodebuild', '-workspace', 'YourApp.xcworkspace', '-scheme', 'YourApp', '-configuration', 'Release'
+}
+
+task uploadIOSAppToFirebase(type: Exec) {
+    group = "Firebase"
+    description = "Upload iOS .ipa file to Firebase App Distribution"
+    
+    // Set paths and Firebase app ID
+    def appId = "YOUR_FIREBASE_APP_ID"  // Replace with your Firebase App ID
+    def testersGroup = "YOUR_TESTER_GROUP"  // Replace with your tester group
+
+    // Path to your .ipa file
+    def ipaFile = "$buildDir/outputs/ipa/YourApp.ipa"  // Replace with actual path to .ipa
+
+    if (!ipaFile.exists()) {
+        throw new GradleException("IPA file not found: $ipaFile")
+    }
+
+    // Firebase CLI command to upload the app to Firebase
+    commandLine "firebase", "appdistribution:distribute", ipaFile, "--app", appId, "--groups", testersGroup
+}
+
+task buildAndUploadAllApps {
+    group = "Release"
+    description = "Build and upload both Android and iOS apps to Firebase"
+
+    dependsOn buildAndroidRelease, buildIOSRelease
+    finalizedBy uploadAndroidToFirebase, uploadIOSAppToFirebase
+}

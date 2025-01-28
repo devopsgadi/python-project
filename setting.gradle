@@ -1,0 +1,3 @@
+// settings.gradle file
+rootProject.name = 'YourProjectName'
+include ':app'  // If you have multiple modules, include them here
